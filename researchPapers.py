@@ -12,7 +12,7 @@ COHERE_KEY = os.getenv("COHERE_KEY")
 
 # Define paths
 input_dir = './Papers'
-output_file = 'TEST_finetuning_dataset.csv'
+output_file = 'Paper_finetuning_dataset.csv'
 
 # Define your questions
 questions = [
