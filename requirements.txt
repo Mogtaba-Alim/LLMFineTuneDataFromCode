@@ -1,0 +1,13 @@
+torch==2.4.1
+datasets==3.0.1
+peft==0.13.2
+transformers==4.45.2
+trl==0.11.3
+pandas==2.2.3
+python-dotenv==1.0.1
+GitPython==3.1.43
+networkx==3.4.1
+anthropic==0.36.0
+openai==1.51.2
+PyPDF2==3.0.1
+nltk==3.9.1
