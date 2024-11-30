@@ -17,17 +17,17 @@ output_file = 'Paper_finetuning_dataset.csv'
 # Define your questions
 questions = [
     "What is the main objective of the research in this paper?",
-    "Summarize the abstract of the paper.",
+    "Can you summarize the abstract of the paper?",
     "What are the softwares and computational tools that were used in this paper?",
     "Describe the methodology used in the paper.",
     "What are the key findings of the paper?",
     "How was the data analyzed in the study?",
     "Was the data in the study pre-processed in anyway? If so how?",
     "What conclusions were drawn in the paper?",
-    "Provide a summary of the literature review from the paper.",
+    "Can you provide a summary of the literature review from the paper?",
     "What future research directions do the authors suggest in the paper?",
     "What statistical techniques were used in the paper?",
-    "Describe the experimental setup in the paper.",
+    "Can you describe the experimental setup in the paper?",
     "What are the implications of the research findings?",
     "What are the limitations and delimitations mentioned in the paper?",
     "What recommendations do the authors make in the paper?",
@@ -35,8 +35,17 @@ questions = [
     "Is there any conflict of interest disclosed in the paper?",
     "What ethical considerations are discussed in the paper?",
     "Which studies are most frequently cited in the paper?",
-    "Explain the technical terms used in the paper.",
-    "What data sources were used in the paper, and are they accessible for further research?"
+    "Can you explain the technical terms used in the paper?",
+    "What data sources were used in the paper, and are they accessible for further research?",
+    "Can you summarize the research paper?",
+    "What is the significance of this research in its field?",
+    "How does this paper contribute to the existing body of knowledge?",
+    "Are there any novel techniques or approaches introduced in this paper?",
+    "What are the potential real-world applications of this research?",
+    "How does the paper address potential biases in the research?",
+    "What validation methods were used to ensure the reliability of the results?",
+    "Are there any contradictions between this paper's findings and previous research?",
+    "What is the sample size and demographic information of the study participants, if applicable?",
 ]
 
 
