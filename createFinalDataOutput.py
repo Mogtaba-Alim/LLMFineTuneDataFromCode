@@ -10,9 +10,7 @@ import re
 import unicodedata
 from dotenv import load_dotenv
 
-# Download the necessary NLTK data
 def ensure_nltk_data():
-    """Ensure that the required NLTK data is downloaded."""
     try:
         nltk.data.find('tokenizers/punkt_tab')
     except LookupError:
@@ -23,10 +21,8 @@ print("Ensuring NLTK data...")
 ensure_nltk_data()
 print("NLTK data check complete.")
 
-# Set your OpenAI API key
 load_dotenv()
 OPENAI_KEY = os.getenv("OPENAI_KEY")
-
 client = OpenAI(api_key=OPENAI_KEY)
 print("OpenAI client initialized.")
 
@@ -38,34 +34,22 @@ def extract_text_from_pdf(pdf_path):
     return text
 
 def clean_whitespace(text):
-    """Clean up excessive whitespace."""
-    # Replace multiple newlines with a single newline
     text = re.sub(r'\n+', '\n', text)
-    
-    # Replace multiple spaces with a single space
     text = re.sub(r'\s+', ' ', text)
-    
-    # Remove leading/trailing whitespace from each line
     text = '\n'.join(line.strip() for line in text.split('\n'))
-    
     return text.strip()
 
 def normalize_unicode(text):
-    """Normalize Unicode characters."""
     return unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('ASCII')
 
 def split_long_sentences(text, max_length=100):
-    """Split long sentences into shorter ones."""
     sentences = sent_tokenize(text)
     new_sentences = []
-    
     for sentence in sentences:
         if len(sentence) > max_length:
-            # Split long sentence at commas, semicolons, or other logical breaks
             parts = re.split(r'[,;:]', sentence)
             new_parts = []
             current_part = ''
-            
             for part in parts:
                 if len(current_part) + len(part) < max_length:
                     current_part += part + (', ' if current_part else '')
@@ -73,24 +57,44 @@ def split_long_sentences(text, max_length=100):
                     if current_part:
                         new_parts.append(current_part.strip())
                     current_part = part + ', '
-            
             if current_part:
                 new_parts.append(current_part.strip())
-            
             new_sentences.extend(new_parts)
         else:
             new_sentences.append(sentence)
-    
     return ' '.join(new_sentences)
 
 def clean_research_paper(text):
-    """Apply all cleaning functions to the research paper text."""
     text = clean_whitespace(text)
     text = normalize_unicode(text)
     text = split_long_sentences(text)
     return text
 
-# List of questions for research papers
+def chunk_text(text: str, chunk_size: int = 2048, chunk_overlap: int = 200) -> List[str]:
+    """
+    Splits `text` into overlapping chunks. 
+    chunk_size and chunk_overlap are approximate 
+    (word-based) in this demo.
+    """
+    words = text.split()
+    chunks = []
+    start = 0
+    
+    while start < len(words):
+        end = start + chunk_size
+        chunk = words[start:end]
+        chunk_str = " ".join(chunk)
+        chunks.append(chunk_str)
+        
+        # Move start forward by (chunk_size - overlap)
+        # ensuring we don't get stuck or go backward.
+        # Also avoid negative or zero step.
+        step = max(chunk_size - chunk_overlap, 1)
+        start += step
+    
+    return chunks
+
+# Original question list
 QUESTIONS = [
     "What is the main objective of the research in this paper?",
     "Can you summarize the abstract of the paper?",
@@ -121,36 +125,70 @@ QUESTIONS = [
     "How does the paper address potential biases in the research?",
     "What validation methods were used to ensure the reliability of the results?",
     "Are there any contradictions between this paper's findings and previous research?",
+    "What are the main limitations of the study?",
+    "What are the main strengths of the study?",
+    "What are the main implications of the study?",
+    "What are the main recommendations for future research?",
+    "What are the main conclusions of the study?",
+    "What are the main findings of the study?",
+    "What are the main results of the study?",
 ]
 
-def get_answer_from_gpt(question: str, paper_content: str) -> str:
-    print(f"Generating answer for question: {question[:50]}...")
-    
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a research assistant with expertise in answering detailed question about academic papers and extracting detailed information."},
-            {"role": "user", "content": f"Based on the following research paper content, please answer this question:\n\nQuestion: {question}\n\nPaper content: {paper_content}..."}
-        ],
-        max_tokens=3000,
-        temperature=0.2,
-        response_format={
-            "type": "text"
-        }
+def get_answer_from_gpt_with_title(pdf_title: str, question: str, chunk: str) -> str:
+    """
+    Calls the LLM API with additional instructions:
+    1. The chunk is part of a research paper titled `pdf_title`.
+    2. If the chunk doesn't contain the relevant info, 
+       the LLM should say: 'the answer to this question is not included in the chunk'.
+    """
+    prompt = (
+        f"You are a research assistant with expertise in academic papers.\n"
+        f"This text is from a paper titled: {pdf_title}.\n\n"
+        f"Chunk content:\n\"\"\"{chunk}\"\"\"\n\n"
+        f"Question: {question}\n\n"
+        f"IMPORTANT: If the answer is not clearly found in the chunk, "
+        f"please respond with: 'the answer to this question is not included in the chunk'."
     )
     
+    print(f"Generating answer for question: {question[:50]}...")
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",  # Or your actual LLM endpoint
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=3000,
+        temperature=0.2,
+        response_format={"type": "text"}
+    )
     print("Answer generated.")
+    
     return response.choices[0].message.content.strip()
 
-def generate_qa_pairs(paper_content: str) -> List[Dict[str, str]]:
-    print("Generating QA pairs...")
+
+def generate_qa_pairs(pdf_title: str, paper_chunks: List[str]) -> List[Dict[str, str]]:
+    print("Generating QA pairs across all chunks...")
+    
     qa_pairs = []
-    for i, question in enumerate(QUESTIONS):
-        print(f"Processing question {i+1}/{len(QUESTIONS)}")
-        answer = get_answer_from_gpt(question, paper_content)
-        qa_pairs.append({"question": question, "answer": answer})
-    print("QA pairs generation complete.")
+    chunk_id = 0
+    
+    for chunk in paper_chunks:
+        chunk_id += 1
+        print(f"Processing chunk {chunk_id} out of {len(paper_chunks)}...")
+        
+        for i, question in enumerate(QUESTIONS):
+            print(f"  Q{i+1}/{len(QUESTIONS)}: {question[:50]}...")
+            
+            # We call get_answer_from_gpt with the chunk and the question
+            # Add a prompt that instructs the LLM to say “answer not included” if missing.
+            answer = get_answer_from_gpt_with_title(pdf_title, question, chunk)
+            
+            qa_pairs.append({
+                "chunk": chunk,
+                "question": question,
+                "answer": answer
+            })
+    
+    print("QA pairs generation complete for all chunks.")
     return qa_pairs
+
 
 def process_single_paper(pdf_path: str, output_dir: str) -> Dict:
     filename = os.path.basename(pdf_path)
@@ -165,13 +203,17 @@ def process_single_paper(pdf_path: str, output_dir: str) -> Dict:
     pdf_text = extract_text_from_pdf(pdf_path)
     cleaned_text = clean_research_paper(pdf_text)
     
+    # ----------------- NEW: Chunk the text here ------------------
+    paper_chunks = chunk_text(cleaned_text, chunk_size=2048, chunk_overlap=200)
+    # -------------------------------------------------------------
+    
     print("Generating QA pairs for the paper...")
+    # Pass the filename (title) and the list of chunks to the Q&A generator
     paper_data = {
         "repo": "research_papers",
         "file": filename,
         "language": "research_paper",
-        "content": cleaned_text,
-        "qa_pairs": generate_qa_pairs(cleaned_text)
+        "qa_pairs": generate_qa_pairs(filename, paper_chunks)  # <---- updated
     }
     
     print(f"Saving output for {filename}")
@@ -180,6 +222,7 @@ def process_single_paper(pdf_path: str, output_dir: str) -> Dict:
     
     print(f"Finished processing {filename}")
     return paper_data
+
 
 def process_research_papers(papers_dir: str, output_dir: str) -> List[Dict]:
     print(f"Processing research papers from directory: {papers_dir}")
@@ -199,6 +242,9 @@ def process_research_papers(papers_dir: str, output_dir: str) -> List[Dict]:
 def combine_paper_outputs(output_dir: str) -> List[Dict]:
     print("Combining individual paper outputs...")
     combined_data = []
+    if not os.path.exists(output_dir):
+        #create the output directory
+        os.makedirs(output_dir)
     for filename in os.listdir(output_dir):
         if filename.endswith("_output.json"):
             with open(os.path.join(output_dir, filename), 'r') as f:
@@ -214,16 +260,13 @@ def save_json(data: List[Dict], filename: str):
     with open(filename, "w") as f:
         json.dump(data, f, indent=2)
 
-# Main execution
 if __name__ == "__main__":
-    papers_dir = "./Papers"
-    output_dir = "./Paper_Outputs"
+    papers_dir = "./paper_Input"
+    output_dir = "./Paper_Outputs_with_chunks"
     print(f"Starting to process papers from {papers_dir}")
     
-    # Process each paper and save individual outputs
     process_research_papers(papers_dir, output_dir)
     
-    # Combine all paper outputs
     research_data = combine_paper_outputs(output_dir)
     
     print("Splitting data into training and validation sets")
@@ -232,7 +275,6 @@ if __name__ == "__main__":
     print("Loading existing code data")
     with open("code_combined_train_dataset.json", "r") as f:
         code_train_data = json.load(f)
-    
     with open("code_combined_val_dataset.json", "r") as f:
         code_val_data = json.load(f)
     
@@ -244,6 +286,6 @@ if __name__ == "__main__":
     save_json(combined_train_data, "combined_dataset_train.json")
     save_json(combined_val_data, "combined_dataset_val.json")
 
-    print(f"Training data saved to combined_dataset_train.json")
-    print(f"Validation data saved to combined_dataset_val.json")
+    print("Training data saved to combined_dataset_train.json")
+    print("Validation data saved to combined_dataset_val.json")
     print("Process completed.")
