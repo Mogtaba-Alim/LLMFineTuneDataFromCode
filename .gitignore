@@ -160,3 +160,6 @@ cython_debug/
 #.idea/
 .env
 lab_docs/
+safekeeping LABGPT working code/
+repos/
+Paper_Outputs_with_chunks/
