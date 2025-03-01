@@ -17,7 +17,7 @@ import numpy as np
 from dataclasses import dataclass, field
 import torch
 from torch.utils.data import Dataset
-from datasets import load_dataset
+from datasets import load_dataset, Dataset
 
 import transformers
 from transformers import (
@@ -34,7 +34,7 @@ from peft import (
     get_peft_model,
     prepare_model_for_kbit_training,
 )
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 
 # Configure logging
 logging.basicConfig(
@@ -535,25 +535,49 @@ def main():
     
     # Prepare the datasets for training
     logger.info(f"Processing training data from: {data_args.train_file}")
-    train_dataset = prepare_dataset_for_trl(data_args.train_file)
-    
+    train_dataset_list = prepare_dataset_for_trl(data_args.train_file)
+    train_dataset = Dataset.from_list(train_dataset_list)
+
     if data_args.val_file:
         logger.info(f"Processing validation data from: {data_args.val_file}")
-        eval_dataset = prepare_dataset_for_trl(data_args.val_file)
+        eval_dataset_list = prepare_dataset_for_trl(data_args.val_file)
+        eval_dataset = Dataset.from_list(eval_dataset_list)
     else:
         eval_dataset = None
     
     # Create the SFT Trainer
     trainer = SFTTrainer(
-        model=model,
-        tokenizer=tokenizer,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        dataset_text_field="prompt",
+    model=model,
+    tokenizer=tokenizer,
+    train_dataset=train_dataset,
+    eval_dataset=eval_dataset,
+    args=SFTConfig(
+        output_dir=training_args.output_dir,
+        per_device_train_batch_size=training_args.per_device_train_batch_size,
+        per_device_eval_batch_size=training_args.per_device_eval_batch_size,
+        gradient_accumulation_steps=training_args.gradient_accumulation_steps,
+        learning_rate=training_args.learning_rate,
+        weight_decay=training_args.weight_decay,
+        num_train_epochs=training_args.num_train_epochs,
+        warmup_ratio=training_args.warmup_ratio,
+        lr_scheduler_type=training_args.lr_scheduler_type,
+        gradient_checkpointing=training_args.gradient_checkpointing,
+        fp16=training_args.fp16,
+        bf16=training_args.bf16,
+        optim=training_args.optim,
+        logging_steps=training_args.logging_steps,
+        eval_steps=training_args.eval_steps,
+        save_steps=training_args.save_steps,
+        save_total_limit=training_args.save_total_limit,
+        report_to=training_args.report_to,
+        seed=training_args.seed,
         max_seq_length=data_args.max_seq_length,
-        packing=False,  # Don't pack multiple examples into one sequence for precise training
-    )
+        dataset_num_proc=1,  # Adjust as needed
+        packing=False,
+        dataset_text_field="text",  # Include this if your text field is not the default "text"
+    ),
+)
+
     
     # Train the model
     logger.info("Starting training")
@@ -562,6 +586,11 @@ def main():
     # Save the final model
     logger.info(f"Saving final model to {training_args.output_dir}")
     trainer.save_model(training_args.output_dir)
+
+    # Upload the model and tokenizer to the Hugging Face Hub
+    logger.info("Uploading model to Hugging Face Hub")
+    model.push_to_hub("llama3.1-8B-BHK-LABGPT-Fine-tunedByMogtaba")
+    tokenizer.push_to_hub("llama3.1-8B-BHK-LABGPT-Fine-tunedByMogtaba")
     
     # Save training metrics
     metrics = train_result.metrics
